@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta http-equiv="Content-Type" content="text/html;
+charset=UTF-8">
+<title>SuperCells</title>
+<style type="text/css"> 
+body{
+    font-family: "HelveticaNeue-Light", sans-serif; padding : 15px;
+}
+</style>
+
+<!-- Sourcing the cpm build -->
+<script src="./artistoo.js"></script>
+<script>
+"use strict"
+
+let config = {
+
+	// Grid settings
+	ndim : 2,
+	field_size : [200,200],
+	
+	// CPM parameters and configuration
+	conf : {
+		torus : [true,true],	
+		T : 20,			// CPM temperature
+				
+		// Adhesion parameters:
+		J: [[0,0, 0], [0,50, 0], [0, 0, 50]],
+		SHOWBORDERS : [true,true],
+
+		// ActivityConstraint parameters
+		LAMBDA_ACT : [0,0, 500],			// ActivityConstraint importance per cellkind
+		MAX_ACT : [0,0, 14],				// Activity memory duration per cellkind
+		ACT_MEAN : "geometric",				// Is neighborhood activity computed as a
+		// "geometric" or "arithmetic" mean?
+			
+
+		
+
+		// VolumeConstraint parameters
+		LAMBDA_V : [0,50, 50],	// VolumeConstraint importance per cellkind
+		V : [0,50, 100],		// Target volume of each cellkind
+		
+
+		LAMBDA_P : [0,2,2],
+		P : [0,20,140]
+	},
+	
+	// Simulation setup and configuration
+	simsettings : {
+		// Cells on the grid
+		NRCELLS : [0,100],		// Number of cells to seed for all
+					// non-background cellkinds.
+		RUNTIME : 500,                // Only used in node
+		CANVASCOLOR : "eaecef",
+		zoom : 3,		// zoom in on canvas with this factor.
+
+		ACTCOLOR : [true, true],
+
+        CELLCOLOR : ["000000","006FFF"]
+	}
+}
+
+
+let sim
+function initialize(){
+	 /* 	The following functions are defined below and will be added to
+	 	the simulation object.*/
+	 let custommethods = {
+	 	initializeGrid : initializeGrid
+	 }
+	sim = new CPM.Simulation( config, custommethods )
+	
+	step()
+}
+
+function step(){
+    sim.step()
+    requestAnimationFrame( step )
+}
+
+
+function initializeGrid(){
+
+	// add the initializer if not already there
+	if( !this.helpClasses["gm"] ){ this.addGridManipulator() }
+
+	// Seed epidermal cell layer
+
+	
+	for( let i = 1 ; i <  this.C.extents[0] ; i += 50 ){
+		for( let j = 1 ; j <  this.C.extents[1] ; j += 50 ){
+			this.gm.seedCellAt( 1, [i,j] )
+		}
+	}
+	let nrcells = this.conf["NRCELLS"], i
+
+	for( i = 0; i < nrcells[1]; i++ ){
+		this.gm.seedCell( 2 )
+
+	}
+}
+
+
+</script>
+</head>
+<body onload="initialize()">
+<h1>My Army</h1>
+<p>
+They divide and multiply and conquer the world for my own pleasure.
+</p>
+</body>
+</html>

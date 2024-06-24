@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>DirectedMotionTargetPoint</title>
+<style type="text/css">
+body{
+		font-family: "HelvetrowaNeue-Light", "Helvetrowa Neue Light", "Helvetrowa Neue",
+		 Helvetrowa, Arial, "Lucida Grande", sans-serif;
+	 padding : 15px;
+	 max-width: 600px;
+	 margin: auto;
+}
+td {
+	 padding: 10px;
+	 vertrowal-align: top;
+}
+</style>
+
+
+<script src="./artistoo.js"></script>
+<script src="./fpsmeter.min.js"></script>
+<script>
+"use strrowt"
+
+
+/*	----------------------------------
+	CONFIGURATION SETTINGS
+	----------------------------------
+*/
+
+let config = {
+
+	// Grid settings
+	ndim : 2,
+	field_size : [200,200],
+	
+	// CPM parameters and configuration
+	conf : {
+		// Basrow CPM parameters
+		torus : [true,true],				// Should the grid have linked borders?
+		seed : 2,							// Seed for random number generation.
+		T : 20,								// CPM temperature
+		
+		// Constraint parameters. 
+		// Mostly these have the format of an array in whrowh each element specifies the
+		// parameter value for one of the cellkinds on the grid.
+		// First value is always cellkind 0 (the background) and is often not used.
+
+		
+		// Adhesion parameters:
+		J : [ 
+		 	[0,20,20,20,20,20,20,20,20,20],
+			[20,2,2,2,2,2,2,2,2,2],
+			[20,2,2,2,2,2,2,2,2,2],
+			[20,2,2,2,2,2,2,2,2,2],
+			[20,2,2,2,2,2,2,2,2,2],
+			[20,2,2,2,2,2,2,2,2,2],
+			[20,2,2,2,2,2,2,2,2,2],
+			[20,2,2,2,2,2,2,2,2,2],
+			[20,2,2,2,2,2,2,2,2,2],
+			[20,2,2,2,2,2,2,2,2,2],
+			
+		],
+		
+		// VolumeConstraint parameters
+		LAMBDA_V : [0,50,50,50,50,50,50,50,50,50],				// VolumeConstraint importance per cellkind
+		V : [0,152,152,152,152,152,152,152,152,152]						// Target volume of each cellkind
+		
+		
+	},
+	
+	// Simulation setup and configuration: this controls stuff like grid initialization,
+	// runtime, and what the output should look like.
+	simsettings : {
+	
+		// Cells on the grid
+		NRCELLS : [0,0,0,0,0,0,0,0,0,0],					// Number of cells to seed for all
+		// non-background cellkinds.
+		// Runtime etc
+		BURNIN : 20,
+		RUNTIME : 1500,
+		RUNTIME_BROWSER : "Inf",
+		
+		// Visualization
+		CANVASCOLOR : "EEEEEE",
+		CELLCOLOR : ["FF0000", // Red
+		"FF7F00", // Orange
+		"FFFF00", // Yellow
+		"00FF00", // Green
+		"0000FF", // Blue
+		"4B0082", // Indigo
+		"8B00FF", // Violet
+		"FF69B4", // Pink
+		"00FFFF"],  // Cyan
+		SHOWBORDERS : [false,false,false,false,false,false,false,false,false,false],				// Should cellborders be displayed?
+		BORDERCOL : ["666666","666666","666666","666666","666666","666666","666666","666666","666666","666666"],
+		zoom : 2,							// zoom in on canvas with this factor.
+		
+		// Output images
+		SAVEIMG : false,						// Should a png image of the grid be saved
+		// during the simulation?
+		IMGFRAMERATE : 1,					// If so, do this every <IMGFRAMERATE> MCS.
+		SAVEPATH : "output/img/DirectedMotionTargetPoint",	// ... And save the image in this folder.
+		EXPNAME : "DirectedMotionTargetPoint",					// Used for the filename of output images.
+		
+		// Output stats etc
+		STATSOUT : { browser: false, node: true }, // Should stats be computed?
+		LOGRATE : 10							// Output stats every <LOGRATE> MCS.
+
+	}
+}
+/*	---------------------------------- */
+let sim, meter, centroids, CPMEvol, availability;
+let width = 200;
+let height = 200;
+let time = 0;
+
+
+
+/* The following custom methods will be added to the simulation object*/
+function initializeGrid(){
+	let type = 0;
+	
+	// add the initializer if not already there
+	if( !this.helpClasses["gm"] ){ this.addGridManipulator() }
+	//drawDot(sim, Canvas,7);
+	for( let i = width/18 ; i < (width) ; i += (width)/9 ){
+		for( let j = width/18 ; j < (width) ; j += (width)/9 ){
+			
+
+			this.gm.seedCellAt( type+1, 
+				[Math.round(i),
+					Math.round(j)] )
+			type=(type+1)%9;
+
+
+		}
+	}
+		
+}
+
+function printMethods(obj) {
+    let currentObj = obj;
+    while (currentObj) {
+        Object.getOwnPropertyNames(currentObj).forEach(prop => {
+            if (typeof obj[prop] === 'function') {
+             
+            }
+        });
+        currentObj = Object.getPrototypeOf(currentObj);
+    }
+}
+// This is the same as the basrow initializeGrid() function, but now we
+	// also allow each cell to have a small burnin period just after seeding.
+	function initializeGrid(){
+		let type = 0;
+		// add the GridManipulator if not already there and if you need it
+		if( !this.helpClasses["gm"] ){ this.addGridManipulator() }
+		
+		
+		// CHANGE THE CODE BELOW TO FIT YOUR SIMULATION
+		for( let i = width/18 ; i < (width) ; i += (width)/9 ){
+			for( let j = width/18 ; j < (width) ; j += (width)/9 ){
+				
+	
+				this.gm.seedCellAt( type+1, 
+					[Math.round(i),
+						Math.round(j)] )
+				type=(type+1)%9;
+		
+		
+				// Burnin for each cell
+				for( let b = 0; b < 5; b++ ){
+					this.C.monteCarloStep()
+				}
+			}
+		}
+	}
+	
+// Custom drawing function to draw the preferred directions.
+function drawCanvas(){
+	
+	/* This part is the normal drawing function */
+	
+	// Add the canvas if required
+	if( !this.helpClasses["canvas"] ){ this.addCanvas() }
+	
+	// Clear canvas and draw stroma border
+	this.Cim.clear( this.conf["CANVASCOLOR"] )
+		
+	// Draw each cellkind appropriately
+	let cellcolor=this.conf["CELLCOLOR"], 
+		nrcells=this.conf["NRCELLS"], cellkind, cellborders = this.conf["SHOWBORDERS"]
+	for( cellkind = 0; cellkind < nrcells.length; cellkind ++ ){
+		
+		// draw the cells of each kind in the right color
+		if( cellcolor[ cellkind ] != -1 ){
+			this.Cim.drawCells( cellkind+1, cellcolor[cellkind] )
+		}
+			
+		// Draw borders if required
+		if(  cellborders[ cellkind  ]  ){
+			this.Cim.drawCellBorders( cellkind+1, "000000" )
+		}
+	}
+		
+	/* This part is for drawing the preferred directions */
+	let pdc = this.C.getConstraint( "PersistenceConstraint" )
+	let ctx = this.Cim.context(), zoom = this.conf["zoom"]
+	let prefdir = ( pdc.conf["LAMBDA_DIR"][ cellkind+1 ] > 0  ) || false
+	ctx.beginPath()
+	ctx.lineWidth = 2*zoom
+
+	for( let i of this.C.cellIDs() ){
+		
+		// Only draw for cells that have a preferred direction.
+		//if( i == 0 ) continue
+		prefdir = ( pdc.conf["LAMBDA_DIR"][ this.C.cellKind( i ) ] > 0  ) || false
+		if( !prefdir ) continue
+			
+		ctx.moveTo( 
+			pdc.cellcentroidlists[i][0][0]*zoom,
+			pdc.cellcentroidlists[i][0][1]*zoom)
+		ctx.lineTo( (pdc.cellcentroidlists[i][0][0]+.1*pdc.celldirections[i][0])*zoom,
+			(pdc.cellcentroidlists[i][0][1]+.1*pdc.celldirections[i][1])*zoom)
+	}
+	ctx.stroke()		
+}
+
+
+
+
+let myApp = {
+    sim: null,
+	sudokuMap: null,
+	timer: 0
+};
+
+
+
+function initialize(){
+	 /* 	The following functions are defined below and will be added to
+	 	the simulation object. If Custom-methods above is set to false,
+	 	this object is ignored and not used in the html/node files. */
+	 let custommethods = {
+	 	initializeGrid : initializeGrid,
+	
+	 }
+
+	
+
+
+	myApp.sim = new CPM.Simulation( config, custommethods );
+
+	myApp.sudokuMap = new Map();
+
+	printMethods(CPM.C)
+
+	initializeSudoku();
+	from_square_to_coords = getSquareCenters(200);
+
+
+	meter = new FPSMeter({left:"auto", right:"5px"});
+	step(from_square_to_coords) ;
+}
+
+function get_all_coords(){
+
+	let coords = [];
+
+	for (let row = 0; row < 9; row++) {
+		for (let col = 0; col < 9; col++) {
+			
+			coords.push(`${row},${col}`);
+		}
+	}
+	return coords
+}
+
+function initializeSudoku() {
+	
+    for (let row = 0; row < 9; row++) {
+        for (let col = 0; col < 9; col++) {
+            const key = `${row},${col}`;
+            const { influences, nonInfluences, distanceSorted } = calculateAreas(row, col);
+            myApp.sudokuMap.set(key, { influences, nonInfluences, distanceSorted });
+        }
+    }
+}
+
+function calculateAreas(row, col) {
+    const influences = [];
+    const nonInfluences = [];
+    const allCoords = [];
+
+    // Calculate influences, non-influences, and prepare distance sorting array
+    for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+            const coord = `${i},${j}`;
+            const distance = Math.sqrt((i - row) ** 2 + (j - col) ** 2);
+            allCoords.push({ coord, distance });
+
+            if (i === row || j === col || (Math.floor(row / 3) === Math.floor(i / 3) && Math.floor(col / 3) === Math.floor(j / 3))) {
+                if (i !== row || j !== col) influences.push(coord);
+            } else {
+                nonInfluences.push(coord);
+            }
+        }
+    }
+
+    // Sort by distance, add randomization for equal distances
+    allCoords.sort((a, b) => a.distance - b.distance || Math.random() - 0.5);
+
+    const distanceSorted = allCoords.map(item => item.coord);
+
+    return { influences, nonInfluences, distanceSorted };
+}
+
+
+function getSquareCenters(width){
+
+	const centers = new Map();
+	row = 0;
+	for( let i = width/18 ; i < (width) ; i += (width)/9 ){
+		col = 0
+		for( let j = width/18 ; j < (width) ; j += (width)/9 ){
+			
+			const square = `${row},${col}`;
+			centers.set(square, {i,j})
+			
+			col += 1;
+		row +=1
+	
+		}
+	}
+	
+	return centers, 200;
+}
+
+
+function subtractArrays(array1, array2) {
+    const array2Counts = array2.reduce((acc, value) => {
+        acc[value] = (acc[value] || 0) + 1;
+        return acc;
+    }, {});
+
+    return array1.filter(item => {
+        if (array2Counts[item]) {
+            array2Counts[item]--;
+            return false;
+        }
+        return true;
+    });
+}
+
+
+function get_new_targets(centroids){
+
+	let string_targets = [];
+	let all_coords = get_all_coords();
+	let type_unavailability = new Map();
+	let square_centers, square_range = getSquareCenters(myApp.sudokuMap, 200);
+	
+	let i = 0;
+	// Make type_to_availability zones map
+	for(let [id, [[x,y], kind]] of Object.entries(centroids)){
+
+	
+		i = i+1;
+		row = Math.round((x-(200/18))/(201/9));
+		col = Math.round((y-(200/18))/(201/9));
+
+
+
+		let this_point = myApp.sudokuMap.get(`${row},${col}`);
+
+		let {influences, nonInfluences, distanceSorted} = this_point;
+
+		
+		if (type_unavailability.has(kind)){
+
+			let old_infl = type_unavailability.get(kind);
+			old_infl = [...old_infl, ...influences]
+				
+			
+		}else{
+			
+			type_unavailability.set(kind, influences);
+		
+
+		}		
+	}
+	
+	for(let [id, [[x,y], kind]] of Object.entries(centroids)){
+
+		row = Math.round((x-(200/18))/(201/9));
+		col = Math.round((y-(200/18))/(201/9));
+		
+		let this_point = myApp.sudokuMap.get(`${row},${col}`);
+
+		let {influences, nonInfluences, distanceSorted} = this_point;
+		let type_specific_unavailability = type_unavailability.get(kind);
+		
+		cell_unavailability = new Set(subtractArrays(type_specific_unavailability, influences));
+		let cell_availability = all_coords.filter(element => !cell_unavailability.has(element));
+		distances_Sorted = distanceSorted.filter(element => cell_availability.includes(element));
+	
+		let [firstElement] = distances_Sorted;
+
+
+		string_targets.push(firstElement);
+	
+		
+		
+	}
+
+
+
+	let coordinate_targets = string_targets.map(item => {
+		let [x, y] = item.split(',').map(Number);
+		return [(x*(200/9))+(200/18), (y*(200/9))+(200/18)];
+	  });
+
+	return [[0,0], ...coordinate_targets];
+}
+
+
+function step(from_square_to_coords ){
+	
+	
+	if (myApp.timer%20 == 0){
+
+		centroids = myApp.sim.C.getStat( CPM.CentroidsWithTorusCorrection );
+		new_targets = get_new_targets(centroids);
+		console.log("NEW_TARGETS ", new_targets);
+
+	}
+
+	myApp.timer += 1;
+	
+	//[[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0]];
+
+	Cdir = new CPM.AttractionPointConstraint({
+
+		LAMBDA_ATTRACTIONPOINT : [0,300,300,300,300,300,300,300,300,300],
+		ATTRACTIONPOINT : new_targets
+
+	})
+
+
+	
+	myApp.sim.C.add( Cdir );
+	
+	myApp.sim.step( );
+
+	myApp.sim.C.remove( Cdir );
+	
+
+	meter.tick();
+
+	if( myApp.sim.conf["RUNTIME_BROWSER"] == "Inf" | myApp.sim.time+1 < myApp.sim.conf["RUNTIME_BROWSER"] ){
+		requestAnimationFrame( step );
+	}
+}
+
+
+
+/*function drawDot(sim, Canvas, x, y) {
+	// Get the canvas element and its 2D context
+
+	const ctx = Canvas.ctx.getContext('2d');
+
+	// Set the color and style for the dot
+	ctx.fillStyle = 'blue';
+
+	// Draw a circle at (x, y)
+	ctx.beginPath(); // Start a new path
+	ctx.arc(x, y, 5, 0, Math.PI * 2); // Draw a circle: context.arc(x, y, radius, startAngle, endAngle)
+	ctx.fill(); // Fill the circle with the current fill style
+}*/
+
+
+</script>
+</head>
+<body onload="initialize()">
+ 
+ <h1>Sudoku collective intelligence</h1>
+ <p> My minions solve sudokus mlml </p>
+</body>
+</html>

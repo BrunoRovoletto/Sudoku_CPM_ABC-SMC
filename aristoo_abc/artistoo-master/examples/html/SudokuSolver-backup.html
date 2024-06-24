@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>DirectedMotionTargetPoint</title>
+<style type="text/css">
+body{
+		font-family: "HelvetrowaNeue-Light", "Helvetrowa Neue Light", "Helvetrowa Neue",
+		 Helvetrowa, Arial, "Lucida Grande", sans-serif;
+	 padding : 15px;
+	 max-width: 600px;
+	 margin: auto;
+}
+td {
+	 padding: 10px;
+	 vertrowal-align: top;
+}
+
+#rectangle {
+    width: 100px;
+    height: 50px;
+    background-color: white;
+    color: #4CAF50;
+    font-size: 10px;
+    text-align: start;
+    line-height: normal; /* Aligns text vertically */
+    margin: 20px;
+}
+
+</style>
+
+
+<script src="./artistoo.js"></script>
+<script src="./fpsmeter.min.js"></script>
+<script>
+"use strrowt"
+
+
+/*	----------------------------------
+	CONFIGURATION SETTINGS
+	----------------------------------
+*/
+
+let config = {
+
+	// Grid settings
+	ndim : 2,
+	field_size : [200,200],
+	
+	// CPM parameters and configuration
+	conf : {
+		// Basrow CPM parameters
+		torus : [false,false],				// Should the grid have linked borders?
+		seed : 2,							// Seed for random number generation.
+		T : 15,								// CPM temperature
+		
+		// Constraint parameters. 
+		// Mostly these have the format of an array in whrowh each element specifies the
+		// parameter value for one of the cellkinds on the grid.
+		// First value is always cellkind 0 (the background) and is often not used.
+
+		
+		// Adhesion parameters:
+		J : [ 
+		 	[0,25,25,25,25,25,25,25,25,25],
+			[25,0,0,0,0,0,0,0,0,0],
+			[25,0,0,0,0,0,0,0,0,0],
+			[25,0,0,0,0,0,0,0,0,0],
+			[25,0,0,0,0,0,0,0,0,0],
+			[25,0,0,0,0,0,0,0,0,0],
+			[25,0,0,0,0,0,0,0,0,0],
+			[25,0,0,0,0,0,0,0,0,0],
+			[25,0,0,0,0,0,0,0,0,0],
+			[25,0,0,0,0,0,0,0,0,0],
+			
+		],
+		
+		// VolumeConstraint parameters
+		LAMBDA_V : [0,70,70,70,70,70,70,70,70,70],				// VolumeConstraint importance per cellkind
+		V : [0,100,100,100,100,100,100,100,100,100]						// Target volume of each cellkind
+		
+		
+	},
+	
+	// Simulation setup and configuration: this controls stuff like grid initialization,
+	// runtime, and what the output should look like.
+	simsettings : {
+	
+		// Cells on the grid
+		NRCELLS : [0,0,0,0,0,0,0,0,0,0],					// Number of cells to seed for all
+		// non-background cellkinds.
+		// Runtime etc
+		BURNIN : 20,
+		RUNTIME : 1500,
+		RUNTIME_BROWSER : "Inf",
+		
+		// Visualization
+		CANVASCOLOR : "EEEEEE",
+		CELLCOLOR : ["FF0000", // Red
+		"FF7F00", // Orange
+		"FFFF00", // Yellow
+		"00FF00", // Green
+		"0000FF", // Blue
+		"4B0082", // Indigo
+		"8B00FF", // Violet
+		"FF69B4", // Pink
+		"00FFFF"],  // Cyan
+		SHOWBORDERS : [false,false,false,false,false,false,false,false,false,false],				// Should cellborders be displayed?
+		BORDERCOL : ["666666","666666","666666","666666","666666","666666","666666","666666","666666","666666"],
+		zoom : 2,							// zoom in on canvas with this factor.
+		
+		// Output images
+		SAVEIMG : false,						// Should a png image of the grid be saved
+		// during the simulation?
+		IMGFRAMERATE : 1,					// If so, do this every <IMGFRAMERATE> MCS.
+		SAVEPATH : "output/img/DirectedMotionTargetPoint",	// ... And save the image in this folder.
+		EXPNAME : "DirectedMotionTargetPoint",					// Used for the filename of output images.
+		
+		// Output stats etc
+		STATSOUT : { browser: false, node: true }, // Should stats be computed?
+		LOGRATE : 10							// Output stats every <LOGRATE> MCS.
+
+	}
+}
+/*	---------------------------------- */
+
+
+
+
+/*
+- Cells have area-of-influence type specific repulsion gradient
+- Cells have square wise attraction when square is complete
+*/
+
+/*TODO:
+check why attractionpoint start with [0,0] 
+Consider other version where all noninfluences are attraction points! 
+Finish implementing square fixing
+Consider making a cell not move if it didnt move in the previous round. Counter grows each time it does not have to move and decreases when it stops a potential movement.
+Remember trick of setting lambda to 0.
+
+Check why logic still seems to not work!
+*/
+
+
+let sim, meter, centroids, CPMEvol, availability;
+let width = 200;
+let height = 200;
+let time = 0;
+
+
+/* The following custom methods will be added to the simulation object*/
+function initializeGrid(){
+	let type = 0;
+	
+	// add the initializer if not already there
+	if( !this.helpClasses["gm"] ){ this.addGridManipulator() }
+	//drawDot(sim, Canvas,7);
+	for( let i = width/18 ; i < (width) ; i += (width)/9 ){
+		for( let j = width/18 ; j < (width) ; j += (width)/9 ){
+			
+
+			this.gm.seedCellAt( type+1, 
+				[Math.round(i),
+					Math.round(j)] )
+			type=(type+1)%9;
+
+
+		}
+	}
+		
+}
+
+function printMethods(obj) {
+    let currentObj = obj;
+    while (currentObj) {
+        Object.getOwnPropertyNames(currentObj).forEach(prop => {
+            if (typeof obj[prop] === 'function') {
+             
+            }
+        });
+        currentObj = Object.getPrototypeOf(currentObj);
+    }
+}
+// This is the same as the basrow initializeGrid() function, but now we
+	// also allow each cell to have a small burnin period just after seeding.
+	function initializeGrid(){
+		let type = 0;
+		// add the GridManipulator if not already there and if you need it
+		if( !this.helpClasses["gm"] ){ this.addGridManipulator() }
+		
+		
+		// CHANGE THE CODE BELOW TO FIT YOUR SIMULATION
+		for( let i = width/18 ; i < (width) ; i += (width)/9 ){
+			for( let j = width/18 ; j < (width) ; j += (width)/9 ){
+				
+	
+				this.gm.seedCellAt( type+1, 
+					[Math.round(i),
+						Math.round(j)] )
+				type=(type+1)%9;
+		
+		
+				// Burnin for each cell
+				for( let b = 0; b < 5; b++ ){
+					this.C.monteCarloStep()
+				}
+			}
+		}
+	}
+
+	function initializeGrid(){
+		if(!this.helpClasses["gm"]) { this.addGridManipulator(); }
+	
+		// Create an array with each type from 0 to 8 repeated 9 times
+		let types = Array.from({length: 81}, (_, index) => (index % 9) + 1);
+
+		// Shuffle the types array using the Fisher-Yates shuffle algorithm
+		for (let i = types.length - 1; i > 0; i--) {
+		
+			const j = Math.floor(Math.random() * (i + 1));
+			[types[i], types[j]] = [types[j], types[i]]; // Swap elements
+		}
+
+		// Seed cells with shuffled types
+		let index = 0;
+		for(let i = width/18 ; i < width ; i += width/9 ){
+			for(let j = width/18 ; j < width ; j += width/9 ){
+				this.gm.seedCellAt(types[index], [Math.round(i), Math.round(j)]);
+
+		
+				index++;
+				// Burnin for each cell
+				for(let b = 0; b < 5; b++){
+					this.C.monteCarloStep();
+				}
+			}
+		}
+	}
+	
+	
+// Custom drawing function to draw the preferred directions.
+function drawCanvas(){
+	
+	/* This part is the normal drawing function */
+	
+	// Add the canvas if required
+	if( !this.helpClasses["canvas"] ){ this.addCanvas() }
+	
+	// Clear canvas and draw stroma border
+	this.Cim.clear( this.conf["CANVASCOLOR"] )
+	
+	//this.Cim.drawPixelSet(pixelarray: ArrayCoordinate[], col: HexColor | function)
+		
+	// Draw each cellkind appropriately
+	let cellcolor=this.conf["CELLCOLOR"], 
+		nrcells=this.conf["NRCELLS"], cellkind, cellborders = this.conf["SHOWBORDERS"]
+	for( cellkind = 0; cellkind < nrcells.length; cellkind ++ ){
+		
+		// draw the cells of each kind in the right color
+		if( cellcolor[ cellkind ] != -1 ){
+			this.Cim.drawCells( cellkind+1, cellcolor[cellkind] )
+		}
+			
+		// Draw borders if required
+		if(  cellborders[ cellkind  ]  ){
+			this.Cim.drawCellBorders( cellkind+1, "000000" )
+		}
+	}
+		
+	/* This part is for drawing the preferred directions */
+	let pdc = this.C.getConstraint( "PersistenceConstraint" )
+	let ctx = this.Cim.context(), zoom = this.conf["zoom"]
+	let prefdir = ( pdc.conf["LAMBDA_DIR"][ cellkind+1 ] > 0  ) || false
+	ctx.beginPath()
+	ctx.lineWidth = 2*zoom
+
+	for( let i of this.C.cellIDs() ){
+		
+		// Only draw for cells that have a preferred direction.
+		//if( i == 0 ) continue
+		prefdir = ( pdc.conf["LAMBDA_DIR"][ this.C.cellKind( i ) ] > 0  ) || false
+		if( !prefdir ) continue
+			
+		ctx.moveTo( 
+			pdc.cellcentroidlists[i][0][0]*zoom,
+			pdc.cellcentroidlists[i][0][1]*zoom)
+		ctx.lineTo( (pdc.cellcentroidlists[i][0][0]+.1*pdc.celldirections[i][0])*zoom,
+			(pdc.cellcentroidlists[i][0][1]+.1*pdc.celldirections[i][1])*zoom)
+	}
+	ctx.stroke()		
+}
+
+
+
+
+let myApp = {
+    sim: null,
+	sudokuMap: null,
+	probabilities: null,
+	temperature: null,
+	all_ids: null,
+	cold_ids: new Set(),
+	id_squarebound: new Map(),
+	id_nonmove: new Map(Array.from({ length: 81 }, (_, i) => [i, 0])),
+	id_stayinsquare: new Map(Array.from({ length: 81 }, (_, i) => [i, 0])), 
+	timer: 0,
+	
+};
+
+
+
+function initialize(){
+	 /* 	The following functions are defined below and will be added to
+	 	the simulation object. If Custom-methods above is set to false,
+	 	this object is ignored and not used in the html/node files. */
+	 let custommethods = {
+	 	initializeGrid : initializeGrid,
+	
+	 }
+
+	myApp.temperature = 0;
+
+
+	myApp.sudokuMap = new Map();
+
+	myApp.probabilities = get_reverse_exponential_probability(1.5);
+	myApp.sim = new CPM.Simulation( config, custommethods );
+	myApp.all_ids = Array.from({ length: 81 }, (_, i) => i);
+	
+
+	
+
+	initializeSudoku();
+	from_square_to_coords = getSquareCenters(200);
+
+
+	meter = new FPSMeter({left:"auto", right:"5px"});
+	step(from_square_to_coords) ;
+}
+
+function get_all_coords(){
+
+	let coords = [];
+
+	for (let row = 0; row < 9; row++) {
+		for (let col = 0; col < 9; col++) {
+			
+			coords.push(`${row},${col}`);
+		}
+	}
+	return coords
+}
+
+function initializeSudoku() {
+	
+    for (let row = 0; row < 9; row++) {
+        for (let col = 0; col < 9; col++) {
+            const key = `${row},${col}`;
+            const { influences, nonInfluences, square_influences, nonsquare_influences, distanceSorted } = calculateAreas(row, col);
+            myApp.sudokuMap.set(key, { influences, nonInfluences, square_influences, nonsquare_influences, distanceSorted });
+        }
+    }
+}
+
+function calculateAreas(row, col) {
+    const influences = [];
+	let square_influences = [];
+	let nonsquare_influences = []
+    const nonInfluences = [];
+    const allCoords = [];
+
+    // Calculate influences, non-influences, and prepare distance sorting array
+    for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+            const coord = `${i},${j}`;
+            const distance = Math.sqrt((i - row) ** 2 + (j - col) ** 2);
+            allCoords.push({ coord, distance });
+
+            if (i === row || j === col || (Math.floor(row / 3) === Math.floor(i / 3) && Math.floor(col / 3) === Math.floor(j / 3))) {
+                if (i !== row || j !== col) influences.push(coord);
+            } else {
+                nonInfluences.push(coord);
+            }
+
+			if (Math.floor(row / 3) === Math.floor(i / 3) && Math.floor(col / 3) === Math.floor(j / 3)){
+				square_influences.push(coord)
+			}
+        }
+    }
+
+	nonsquare_influences = influences.filter(element => !square_influences.includes(element))
+    // Sort by distance, add randomization for equal distances
+    allCoords.sort((a, b) => a.distance - b.distance || Math.random() - 0.5);
+
+    const distanceSorted = allCoords.map(item => item.coord);
+
+    return { influences, nonInfluences, square_influences, nonsquare_influences, distanceSorted };
+}
+
+
+function getSquareCenters(width){
+
+	const centers = new Map();
+	row = 0;
+	for( let i = width/18 ; i < (width) ; i += (width)/9 ){
+		col = 0
+		for( let j = width/18 ; j < (width) ; j += (width)/9 ){
+			
+			const square = `${row},${col}`;
+			centers.set(square, {i,j})
+			
+			col += 1;
+		row +=1
+	
+		}
+	}
+	
+	return centers, 200;
+}
+
+
+function subtractArrays(array1, array2) {
+    const array2Counts = array2.reduce((acc, value) => {
+        acc[value] = (acc[value] || 0) + 1;
+        return acc;
+    }, {});
+
+    return array1.filter(item => {
+        if (array2Counts[item]) {
+            array2Counts[item]--;
+            return false;
+        }
+        return true;
+    });
+}
+
+function get_reverse_exponential_probability(b){
+
+	// b is the base of the exponential function, adjust this to change the distribution skew
+
+    let probabilities = [];
+    let sum = 0;
+
+    // Calculate unnormalized probabilities using exponential decay
+    for (let i = 0; i < 81; i++) {
+        probabilities[i] = Math.pow(b, -i);
+        sum += probabilities[i];
+    }
+
+    // Normalize the probabilities
+    probabilities = probabilities.map(p => p / sum);
+
+	return probabilities
+
+}
+
+function move_to_if(elements, move_ind, row,col,id){
+
+	if (elements[move_ind] == `${row},${col}`)
+	{
+		myApp.id_nonmove[id-1] += Math.min(7, myApp.id_nonmove[id-1]+1);
+		return elements[move_ind]
+	}
+	else
+	{
+		if (myApp.id_nonmove[id-1]>0)
+		{
+			myApp.id_nonmove[id-1] -= 1;
+			return `${row},${col}`
+		}
+		else
+		{
+			return elements[move_ind]
+		}
+	}
+}
+
+function change_squarebound_if(id, value) 
+{
+	if (value == false)
+	{
+		if (myApp.id_stayinsquare[id-1] > 0 )
+		{
+			myApp.id_stayinsquare[id-1] -= 1
+			return true
+		}
+		return false
+	}
+	else
+	{
+		myApp.id_stayinsquare[id-1] = Math.min(3, myApp.id_stayinsquare[id-1]+1)
+		return true
+
+	}
+
+}
+
+function selectElement(elements,row,col,id,mode) {
+
+	
+	
+	//if (elements[0] == `${row},${col}`&& mode=="sudoku")
+	if ( mode=="sudoku")
+	{	
+		
+		return move_to_if(elements, move_ind = 0, row, col, id)
+	}
+	else
+	{
+
+		// Select a random index based on the probabilities
+		let cumulative = 0;
+		const random = Math.random();
+		for (let i = 0; i < myApp.probabilities.length; i++) {
+			cumulative += myApp.probabilities[i];
+			if (random < cumulative) {
+				//console.log("SELECTED ELEMENT: ", i)
+				
+				return move_to_if(elements, move_ind = Math.min(i, elements.length - 1), row, col, id)
+				
+				//return elements[0];
+			}
+		}
+
+		// In rare cases where floating-point precision issues occur, return the last element
+		console.log("AAAAAAAAAAAAAH selectElement aaaah")
+		return elements[elements.length - 1];
+	}
+}
+
+
+
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]]; // ES6 destructuring swap
+    }
+}
+
+
+function isArrayEmpty(array) {
+    return array.length === 0;
+}
+
+function updateColdIds() {
+
+    let targetSize = Math.floor((1 - myApp.temperature) * 81);
+
+    while (myApp.cold_ids.size < targetSize) {
+        let randomId = myApp.all_ids[Math.floor(Math.random() * 81)];
+        myApp.cold_ids.add(randomId);
+    }
+}
+
+function get_new_targets(centroids){
+
+	let target_point = null;
+	let string_targets = [];
+	let all_coords = get_all_coords();
+	let type_unavailability = new Map();
+	let type_unavailability_only_squares = new Map();
+	
+	let square_centers, square_range = getSquareCenters(myApp.sudokuMap, 200);
+	
+	let i = 0;
+
+	// Make map of unavailable zones for each kinf -> type unavailability
+	for(let [id, [[x,y], kind]] of Object.entries(centroids)){
+
+	//console.log("centroid decomposed ", id, x, y, kind)
+		i = i+1;
+		row = Math.round((x-(200/18))/(201/9));
+		col = Math.round((y-(200/18))/(201/9));
+
+
+
+		let this_point = myApp.sudokuMap.get(`${row},${col}`);
+
+		let { influences, nonInfluences, square_influences, nonsquare_influences, distanceSorted } = this_point;
+
+		// Merge influence zones for each kind
+		if (type_unavailability.has(kind)){
+
+			let old_infl = type_unavailability.get(kind);
+			old_infl = [...old_infl, ...influences];
+			type_unavailability.set(kind, old_infl);
+
+			// This is needed later in order to check when to fix cells to a 3x3 square
+			let old_square_infl = type_unavailability_only_squares.get(kind);
+			old_square_infl = [...old_square_infl, ...square_influences];
+			type_unavailability_only_squares.set(kind, old_square_infl);
+				
+			
+		}else{
+			
+			type_unavailability.set(kind, influences);
+			type_unavailability_only_squares.set(kind, square_influences);
+		
+
+		}		
+	}
+	//console.log("type_unavailability: ",type_unavailability )
+
+	let centroids_array = Object.entries(centroids);
+	shuffleArray( centroids_array );
+	
+	// Create target_point list, cell by cell
+	let target_point_log = []
+	for(let [id, [[x,y], kind]] of centroids_array){
+
+		row = Math.round((x-(200/18))/(201/9));
+		col = Math.round((y-(200/18))/(201/9));
+		
+		// Get cell data from position in grid, and get its kind's unavailability
+		let this_point = myApp.sudokuMap.get(`${row},${col}`);
+		let { influences, nonInfluences, square_influences, nonsquare_influences, distanceSorted } = this_point;
+		let type_specific_unavailability = type_unavailability.get(kind);
+		let type_specific_unavailability_only_squares = type_unavailability_only_squares.get(kind)
+
+		// Remove unavailability influence of self, but keep if multiple cells make a point unavailable ( Set operation )
+		cell_unavailability = new Set(subtractArrays(type_specific_unavailability, influences));
+		cell_unavailability_only_square = new Set(subtractArrays(type_specific_unavailability_only_squares, square_influences));
+		
+		//Subtract unavailability from the array of all the distance-sorted grid coordinates
+		
+		filtered_distances_Sorted = distanceSorted.filter(element => !cell_unavailability.has(element));
+		if (myApp.id_squarebound[id] == true){
+			filtered_distances_Sorted = filtered_distances_Sorted.filter(element => square_influences.includes(element))
+		}
+
+		filtered_distances_Sorted_only_squares = distanceSorted.filter(element => !cell_unavailability_only_square.has(element))
+		
+		//	(more probable if temperature is higher) -> do NOT enforce sudoku constraints
+		if (!myApp.cold_ids.has(parseInt(id))){
+
+			if (myApp.id_squarebound[id] == true)
+				{
+					available_distances_sorted = square_influences.filter(element => !string_targets.includes(element))
+					if (available_distances_sorted.length === 0){
+
+						available_distances_sorted = square_influences;
+
+					}
+				}	
+			else
+			{
+			available_distances_sorted = distanceSorted.filter(element => !string_targets.includes(element))
+			target_point = selectElement(available_distances_sorted,row,col,"sudoku");
+			}
+
+/*
+			//	If possible, only select targets which have not already been selected for other cells
+			
+			distanceSorted_no_multiple = distanceSorted.filter(element => !string_targets.includes(element));
+
+			// Check if all coordinates of distance_sorted have already been taken as targets, and therefore distanceSorted_no_multiple is empty
+			// If that is the case, just choose an already-chosen element from distance_sorted
+			if( !isArrayEmpty( distanceSorted_no_multiple ) )
+				target_point = selectElement(distanceSorted_no_multiple,row,col,"random");
+			else{
+				target_point = selectElement(distanceSorted,row,col,"random");
+				//console.log("CCCCCCCCCC")
+			}
+*/
+		//(more probable if temperature is lower) -> enforce sudoku constraints
+		}else{
+
+			filtered_distances_Sorted_no_multiple = filtered_distances_Sorted.filter(element => !string_targets.includes(element));
+			if (myApp.id_squarebound[id] == true)
+				{
+					filtered_distances_Sorted_no_multiple = filtered_distances_Sorted_no_multiple.filter(element => square_influences.includes(element))
+				}
+			
+
+			//console.log("NO MULTIPLE: filtered_sorted: ", filtered_distances_Sorted, "targets: ",string_targets, "filtered_no_multiple: ", filtered_distances_Sorted_no_multiple)
+			// Check if all coordinates of filtered_distance_sorted_no_multiple have already been taken as targets, and therefore distanceSorted_no_multiple is empty
+			// If that is the case, just chose an already chosen target from filtered_distances_Sorted
+
+			// Enforce sudoku constraints!
+			if( !isArrayEmpty(filtered_distances_Sorted_no_multiple) ){
+
+				//Important: this fixes cells to squares when they fit in the square
+				if(filtered_distances_Sorted_only_squares.includes(target_point)){
+					myApp.id_squarebound[id] = change_squarebound_if(id,true);
+				}else{
+					myApp.id_squarebound[id] = change_squarebound_if(id,false);
+				}
+
+				target_point = selectElement(filtered_distances_Sorted_no_multiple,row,col,"sudoku");
+				
+
+				
+
+			}
+
+			else {
+
+				// Still, if even all filtered_distances_Sorted have been taken, just select a random close target
+				if (myApp.id_squarebound[id] == true)
+				{
+					available_squares = square_influences.filter(element => !string_targets.includes(element))
+				
+					if(available_squares.length === 0)
+					{
+						available_squares = square_influences
+					}
+
+					target_point = selectElement(available_squares,row,col,"sudoku");
+
+				}
+				else
+				{
+				available_distances_sorted = distanceSorted.filter(element => !string_targets.includes(element))
+				target_point = selectElement(available_distances_sorted,row,col,"sudoku");
+				}
+/*
+				if(isArrayEmpty(filtered_distances_Sorted))
+				{
+				target_point = selectElement(filtered_distance_Sorted,row,col,"sudoku");
+				}
+				else
+				{
+				target_point = selectElement(distanceSorted,row,col,"random");
+				//console.log("BBBBBBBBBBB")
+				}
+*/
+			}
+			
+		}
+
+
+		string_targets[id-1] = target_point;
+		//console.log("string_targets: ", string_targets)
+		target_point_log.push(target_point)
+	
+	//console.log("target_point_log: ", target_point_log)	
+	}
+
+
+
+	let coordinate_targets = string_targets.map(item => {
+		let [x, y] = item.split(',').map(Number);
+		return [(x*(200/9))+(200/18), (y*(200/9))+(200/18)];
+	  });
+	  
+	//coordinate_targets[0] = [0,0]
+
+	//coordinate_targets = get_numerical_coord_from_string_coord(string_targets, "multiple")
+	//coordinate_targets[0] = [0,0]   ???
+	//coordinate_targets.unshift([0, 0]);
+	console.log("coordinate targets", coordinate_targets);
+	console.log("coordinate targets!",[...[[0,0]],...coordinate_targets]);
+	return coordinate_targets;
+}
+
+function get_numerical_coord_from_string_coord(string_targets, mode)
+{
+
+	if(mode == "multiple")
+	{
+		let coordinate_targets = string_targets.map(item => {
+			let [x, y] = item.split(',').map(Number);
+			return [(x*(200/9))+(200/18), (y*(200/9))+(200/18)];
+		  });
+		  
+	
+	
+		return coordinate_targets;
+
+	}
+	// if only a single string coordinate is passed as input
+	
+	let [x, y] = string_targets.split(',').map(Number);
+	return [(x*(200/9))+(200/18), (y*(200/9))+(200/18)];
+	
+
+
+}
+
+function updateNumber(newNumber) {
+    const rectangle = document.getElementById('temperature');
+    rectangle.textContent = newNumber;
+}
+
+function step(from_square_to_coords ){
+	
+	let rate = 1000;
+
+	if(myApp.timer%rate==0){
+		//console.log(myApp.timer);
+	}
+
+	if (myApp.timer%rate == 0){
+
+		centroids = myApp.sim.C.getStat( CPM.CentroidsWithTorusCorrection );
+		console.log("CENTROIDS: ", centroids);
+		new_targets = get_new_targets(centroids);
+		myApp.temperature = myApp.temperature*0.9
+		updateColdIds();
+		//myApp.temperature = 1;
+		updateNumber(Math.round(myApp.temperature*100));
+	
+
+	}
+
+	myApp.timer += 1;
+	
+	
+
+	Cdir = new CPM.AttractionPointConstraint({
+
+		LAMBDA_ATTRACTIONPOINT : [0,300,300,300,300,300,300,300,300,300],
+		ATTRACTIONPOINT : [...[[0,0]], ...new_targets]
+
+	})
+
+
+	
+	myApp.sim.C.add( Cdir );
+	
+	myApp.sim.step();
+
+	myApp.sim.C.remove( Cdir );
+	
+
+	meter.tick();
+
+	if( myApp.sim.conf["RUNTIME_BROWSER"] == "Inf" | myApp.sim.time+1 < myApp.sim.conf["RUNTIME_BROWSER"] ){
+		requestAnimationFrame( step );
+	}
+}
+
+
+
+/*function drawDot(sim, Canvas, x, y) {
+	// Get the canvas element and its 2D context
+
+	const ctx = Canvas.ctx.getContext('2d');
+
+	// Set the color and style for the dot
+	ctx.fillStyle = 'blue';
+
+	// Draw a circle at (x, y)
+	ctx.beginPath(); // Start a new path
+	ctx.arc(x, y, 5, 0, Math.PI * 2); // Draw a circle: context.arc(x, y, radius, startAngle, endAngle)
+	ctx.fill(); // Fill the circle with the current fill style
+}*/
+
+
+</script>
+</head>
+<body onload="initialize()">
+ 
+ <h1>Sudoku collective intelligence</h1>
+ <p> My minions solve sudokus mlml </p>
+ <div id="rectangle">Temperature: <span id="temperature"></span>°C</div>
+</body>
+</html>

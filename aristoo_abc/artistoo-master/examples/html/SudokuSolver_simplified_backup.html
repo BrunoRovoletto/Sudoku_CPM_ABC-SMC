@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>DirectedMotionTargetPoint</title>
+<style type="text/css">
+body{
+		font-family: "HelvetrowaNeue-Light", "Helvetrowa Neue Light", "Helvetrowa Neue",
+		 Helvetrowa, Arial, "Lucida Grande", sans-serif;
+	 padding : 15px;
+	 max-width: 600px;
+	 margin: auto;
+}
+td {
+	 padding: 10px;
+	 vertrowal-align: top;
+}
+
+#rectangle {
+    width: 100px;
+    height: 50px;
+    background-color: white;
+    color: #4CAF50;
+    font-size: 10px;
+    text-align: start;
+    line-height: normal; /* Aligns text vertically */
+    margin: 20px;
+}
+
+</style>
+
+
+<script src="./artistoo2.js"></script>
+<script src="./fpsmeter.min.js"></script>
+<script>
+"use strrowt"
+
+
+/*	----------------------------------
+	CONFIGURATION SETTINGS
+	----------------------------------
+*/
+
+let sim, meter, centroids, CPMEvol, availability;
+let width = 100;
+let height = width;
+let time = 0;
+let square_num = 4;
+let bigsquare_num = Math.sqrt(square_num);
+
+let barrier_set = false
+let areaMap = findBigSquareAreas(width,bigsquare_num)
+console.log("areaMap: ", areaMap)
+
+let config = {
+
+	// Grid settings
+	ndim : 2,
+	field_size : [width,width],
+	torus : [false,false],
+	
+	// CPM parameters and configuration
+	conf : {
+		// Basrow CPM parameters
+					// Should the grid have linked borders?
+		seed : 2,							// Seed for random number generation.
+		T : 5,								// CPM temperature
+		
+		// Constraint parameters. 
+		// Mostly these have the format of an array in whrowh each element specifies the
+		// parameter value for one of the cellkinds on the grid.
+		// First value is always cellkind 0 (the background) and is often not used.
+
+		
+		// Adhesion parameters:
+		J : [ 
+		 	[0,15,15,15,15,15,15],
+			[15,200,1,1,1,1,1],
+			[15,1,200,1,1,1,1],
+			[15,1,1,200,1,1,1],
+			[15,1,1,1,200,1,1],
+			[15,1,1,1,1,200,1],
+			[15,1,1,1,1,1,200]
+			
+		],
+		
+		// VolumeConstraint parameters
+		LAMBDA_V : [0,300,300,300,300,300,300],				// VolumeConstraint importance per cellkind
+		V : [0,27,27,27,27,27,27]						// Target volume of each cellkind
+		
+		
+	},
+	
+	// Simulation setup and configuration: this controls stuff like grid initialization,
+	// runtime, and what the output should look like.
+	simsettings : {
+	
+		// Cells on the grid
+		NRCELLS : [0,0,0,0,0,0,0],					// Number of cells to seed for all
+		// non-background cellkinds.
+		// Runtime etc
+		BURNIN : 20,
+		RUNTIME : 1500,
+		RUNTIME_BROWSER : "Inf",
+		
+		// Visualization
+		CANVASCOLOR : "EEEEEE",
+		CELLCOLOR : ["FF7F00", // Orange
+			"FFFF00", // Yellow
+			"00FF00", // Green
+			"0000FF"], //Blue
+
+		SHOWBORDERS : [false,false,false,false,false,false,false],				// Should cellborders be displayed?
+		BORDERCOL : ["666666","666666","666666","666666","666666","666666","666666"],
+		zoom : 3,							// zoom in on canvas with this factor.
+		
+		// Output images
+		SAVEIMG : false,						// Should a png image of the grid be saved
+		// during the simulation?
+		IMGFRAMERATE : 1,					// If so, do this every <IMGFRAMERATE> MCS.
+		SAVEPATH : "output/img/DirectedMotionTargetPoint",	// ... And save the image in this folder.
+		EXPNAME : "DirectedMotionTargetPoint",					// Used for the filename of output images.
+		
+		// Output stats etc
+		STATSOUT : { browser: false, node: true }, // Should stats be computed?
+		LOGRATE : 10,
+
+		// ActivityConstraint parameters
+		LAMBDA_ACT : [0,500],			// ActivityConstraint importance per cellkind
+		MAX_ACT : [0,40],				// Activity memory duration per cellkind
+		ACT_MEAN : "geometric"				// Is neighborhood activity computed as a					// Output stats every <LOGRATE> MCS.
+
+	}
+
+}
+/*	---------------------------------- */
+
+
+
+let C, Cim, gm;
+let hole_dim = 16
+let _edges = getEdges(width)
+let walls = makeWalls(width)
+
+
+let myApp = {
+    sim: null,
+	sudokuMap: null,
+	probabilities: null,
+	temperature: null,
+	all_ids: null,
+	channelvoxels: null,
+	timer: 0,
+	config: null
+	
+};
+
+function initialize(){
+
+	setup()
+	initializeGrid()
+	//step()
+
+}
+
+
+
+
+function setup(lambda_v = 5, v = 590, lambda_p = 1, p = 170, T = 25, adh1 = 5, adh2 = 500, adh3 = 1, lambda_act = 500, max_act = 40 ){
+	/* 	The following functions are defined below and will be added to
+		the simulation object. If Custom-methods above is set to false,
+		this object is ignored and not used in the html/node files. */
+
+		myApp.conf = {
+			torus : [false,false],
+			seed : 1,
+			T : 25
+		}
+
+   /*myApp.temperature = 0;
+   myApp.sim = new CPM.Simulation( config , custommethods );
+   myApp.all_ids = Array.from({ length: 81 }, (_, i) => i);*/
+
+
+    C = new CPM.CPM( [width,width], myApp.conf)
+
+	C.conf.torus = [false,false]
+    C.add( new CPM.Adhesion( { J : [ 
+		[0,adh1,adh1,adh1,adh1],
+	   [adh1,adh2,adh3,adh3,adh3],
+	   [adh1,adh3,adh2,adh3,adh3],
+	   [adh1,adh3,adh3,adh2,adh3],
+	   [adh1,adh3,adh3,adh3,adh2]
+	   
+   ]} ) )
+	C.add( new CPM.VolumeConstraint( { LAMBDA_V : [0,lambda_v,lambda_v,lambda_v,lambda_v],	V : [0,v,v,v,v]	 } ) )
+
+	C.add( new CPM.PerimeterConstraint( { LAMBDA_P : [0,lambda_p,lambda_p,lambda_p,lambda_p], P : [0,p,p,p,p] } ) )
+	
+	C.add( new CPM.ActivityConstraint( {
+		LAMBDA_ACT : [0,lambda_act,lambda_act,lambda_act,lambda_act],			
+		MAX_ACT : [0,max_act,max_act,max_act,max_act],				// Activity memory duration per cellkind
+		ACT_MEAN : "geometric"
+	} ) )
+
+	//C.add( new CPM.PerimeterConstraint( { LAMBDA_P : [0,2], P : [0,260] } ) )
+   
+ 
+    Cim = new CPM.Canvas( C, { zoom : 2 } )
+    gm = new CPM.GridManipulator( C )
+    meter = new FPSMeter({left:"auto", right:"5px"})
+
+
+
+
+
+
+    step();
+}
+
+
+
+function draw(){
+
+	Cim.clear("fafafa")
+	//Cim.clear( C.conf.simsettings.CANVASCOLOR )
+	Cim.drawCells( 1, "000000" )
+	// Draw each cellkind appropriately
+	let cellkind;
+	let cellcolor=config.simsettings.CELLCOLOR
+		nrcells=config.simsettings.NRCELLS,  cellborders = config.simsettings.SHOWBORDERS
+		
+	for( cellkind = 0; cellkind < nrcells.length; cellkind ++ ){
+		
+		// draw the cells of each kind in the right color
+		if( cellcolor[ cellkind ] != -1 ){
+			Cim.drawCells( cellkind+1, cellcolor[cellkind] )
+		}
+			
+		// Draw borders if required
+		/*if(  cellborders[ cellkind  ]  ){
+			Cim.drawCellBorders( cellkind+1, "000000" )
+		}*/
+	}
+	Cim.ctx.stroke()
+	Cim.ctx.globalAlpha = 1	
+	
+	
+	// Cim.drawActivityValues( 1 )
+}
+
+
+
+
+	function initializeGrid(){
+	
+	
+		// Create an array with each type from 1 to 6 repeated 6 times
+		let types = Array.from({length: square_num * square_num}, (_, index) => (index % square_num) + 1);
+
+		// Shuffle the types array using the Fisher-Yates shuffle algorithm
+		for (let i = types.length - 1; i > 0; i--) {
+		
+			const j = Math.floor(Math.random() * (i + 1));
+			[types[i], types[j]] = [types[j], types[i]]; // Swap elements
+		}
+
+		// Seed cells with shuffled types
+		
+	
+		let index = 0;
+		for(let i = width/(square_num*2) ; i < width ; i += width/(square_num) ){
+			for(let j = width/(square_num*2) ; j < width ; j += width/(square_num) ){
+				gm.seedCellAt(types[index], [Math.round(i), Math.round(j)]);
+
+		
+				index++;
+				// Burnin for each cell
+				for(let b = 0; b < 5; b++){
+					C.monteCarloStep();
+				}
+			}
+		}
+
+		setBarriers(walls, justdraw = false)
+
+	}
+	
+	
+
+
+
+/*
+function step(){
+	
+	myApp.sim.step();
+
+	meter.tick();
+
+	if( myApp.sim.conf["RUNTIME_BROWSER"] == "Inf" | myApp.sim.time+1 < myApp.sim.conf["RUNTIME_BROWSER"] ){
+		requestAnimationFrame( step );
+	}
+}
+*/
+
+function subtractArrays(arr1, arr2) {
+    return arr1.filter(element1 => 
+        !arr2.some(element2 => 
+            element1[0] === element2[0] && element1[1] === element2[1]
+        )
+    );
+}
+function getBigSquareEdges(dim) {
+    const bigSquareSize = Math.floor(dim / 2);
+    const edgeCoordinates = [];
+
+	for(let i=1; i<2; i++){
+
+		
+		edgeCoordinates.push(   ...[...Array(dim).keys()].map(num => [num, i*bigSquareSize] )   )
+		edgeCoordinates.push(   ...[...Array(dim).keys()].map(num => [i*bigSquareSize, num] )   )
+
+	}
+	
+    
+	//console.log("edgcoords: ", edgeCoordinates)
+    return edgeCoordinates;
+}
+
+function expandWalls(amount, bigSquareSize){
+
+	pixels.map(coord => {
+		
+		for(let i=1; i<2; i++){
+			for(let j=0; j<amount; j++){
+
+				if(coord[0] == i*bigSquareSize){
+					return [[coord[0]-j], [coord[0]+j]]
+
+				}
+			}
+
+		}
+	})
+}
+
+function expandWalls(pixels, amount, bigSquareSize) {
+    return pixels.flatMap(coord => {
+        let expandedCoords = [];
+        
+        for (let i = 1; i < 2; i++) {
+            for (let j = 1; j < amount; j++) {
+                if (coord[0] == i * bigSquareSize) {
+                    expandedCoords.push([coord[0] - j, coord[1]]);
+                    expandedCoords.push([coord[0] + j, coord[1]]);
+                }
+				else if(coord[1] == i * bigSquareSize){
+					expandedCoords.push([ coord[0], coord[1] - j ]);
+                    expandedCoords.push([ coord[0], coord[1] + j ]);
+
+				}
+            }
+        }
+        
+        // If no expansion happened, return the original coordinate
+        if (expandedCoords.length === 0) {
+            return [coord];
+        }
+        
+        return pixels.concat(expandedCoords);
+    });
+}
+
+
+
+
+
+function createHoles(dim, edgeCoordinates, holeDim) {
+	holeDim = parseInt(Math.floor(holeDim))
+	const bigSquareSize = Math.floor(dim / 2);
+    const holeOffset = Math.floor(holeDim / 2);
+    const holeCoordinates = [];
+
+	for(let i=1; i<3; i++){
+		for(let j=1; j<4; j=j+2 ){
+
+			holeCoordinates.push(...[...Array(holeDim).keys()].map(num => [num+((bigSquareSize*j/2)-holeDim/2),	i*bigSquareSize] ) )
+			holeCoordinates.push(...[...Array(holeDim).keys()].map(num => [ i*bigSquareSize,	num+((bigSquareSize*j/2)-holeDim/2) ] ) )
+
+		}
+	}
+	let final_barriers = subtractArrays(edgeCoordinates, holeCoordinates)
+
+	//console.log("holecoordinates: ", edgeCoordinates)
+	//console.log("final_barriers: ", final_barriers)
+	
+	return final_barriers
+}
+
+function getEdges(dim){
+
+	edges = []
+
+	edges.push(...[...Array(dim).keys()].map(num => [num, 1]) )
+	edges.push(...[...Array(dim).keys()].map(num => [num, dim-1])  )
+	edges.push(...[...Array(dim).keys()].map(num => [1, num])  )
+	edges.push(...[...Array(dim).keys()].map(num => [dim-1, num])  )
+
+	return edges
+
+
+}
+
+function makeWalls(width){
+
+	const bigSquareSize = Math.floor(width / 2);
+
+	pixels = getBigSquareEdges(width)
+
+	pixels = createHoles(width, pixels, hole_dim)
+
+	pixels = expandWalls(pixels, 3, bigSquareSize)
+
+	return pixels
+
+}
+
+
+function setBarriers(pixels, justdraw=false){
+
+
+	//pixels = pixels.concat(_edges)
+
+	Cim.drawPixelSet( pixels, "6495ED" );
+
+
+	if(justdraw==false){	
+
+		let debug = "BIG Cunghy Chungus"
+
+		C.add( new CPM.BorderConstraint({
+			BARRIER_VOXELS : pixels
+		}) )
+
+	}
+
+}
+
+function findBigSquareAreas(dim, bigsquare_num){
+
+	let quadrant = 0
+	let bigSquareSize = parseInt(dim/bigsquare_num)
+
+	let areaMap = new Map();
+
+	for(let x=0; x<dim; x++)
+	{	
+		
+		
+		for(let y=0; y<dim; y++)
+		{	
+			let quadrantX = Math.floor(x / bigSquareSize);
+            let quadrantY = Math.floor(y / bigSquareSize);
+            let quadrant = quadrantX + bigsquare_num * quadrantY;
+
+			areaMap.set(`${x},${y}`, quadrant);
+
+		}
+
+	}
+
+return areaMap
+
+}
+
+function roundUpTo(num, decimalPlaces) {
+    const factor = Math.pow(10, decimalPlaces);
+    return Math.ceil(num * factor) / factor;
+}
+
+function evaluate(dim, centroids, areaMap){
+
+	let completionMap = new Map(Array.from({ length: bigsquare_num * bigsquare_num }, (_, i) => [i, []]));
+	let score = 0
+	let maxScore = square_num*square_num
+
+
+	
+	for(let [id, [[x,y], kind]] of Object.entries(centroids)){
+
+		console.log("centroidStats:	", id, x, y, kind)
+
+	
+		let quadrant = areaMap.get(`${Math.round(x)},${Math.round(y)}`)
+
+		console.log("completionMap:	", completionMap)
+		
+		if( !completionMap.get(quadrant).includes(kind)){
+			score += 1
+			completionMap.get(quadrant).push(kind)
+
+		}else{
+
+			console.log("chungus")
+		}
+
+	}
+
+	return roundUpTo(score/maxScore, 2)
+
+}
+
+
+//let score = 0
+function step(){
+
+	
+	
+	
+	C.timeStep()
+	draw() 	
+	setBarriers(walls, justdraw = barrier_set)
+	barrier_set = true
+	
+	centroids = C.getStat( CPM.CentroidsWithTorusCorrection );
+	score = evaluate(width, centroids, areaMap)
+	updateNumber(score);
+	
+	meter.tick()	
+	requestAnimationFrame( step )
+	//console.log("vconstraint: ", CPM.soft_constraints)
+}
+
+function updateNumber(newNumber) {
+    const rectangle = document.getElementById('temperature');
+    rectangle.textContent = newNumber;
+
+}
+
+
+
+
+
+
+
+/*
+
+
+
+
+function randomGaussian(mean, stddev) {
+    let u1 = Math.random();
+    let u2 = Math.random();
+    let z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+    return z * stddev + mean;
+}
+
+function mutateTheta(theta, sigma) {
+    return theta.map((value, index) => value + randomGaussian(0, sigma[index]));
+}
+
+function selectRandomSample(population) {
+    return population[Math.floor(Math.random() * population.length)];
+}
+
+function abcSmc({
+    model,
+    prior,
+    populationSize,
+    mutationCovariance,
+    thresholds,
+    distanceFunction,
+    observedData
+}) {
+    // Initial population
+    let population = Array.from({ length: populationSize }, () => prior());
+
+    // Filter initial population to meet the first threshold
+    let acceptedSamples = population.filter(theta => distanceFunction(model(theta), observedData) <= thresholds[0]);
+
+    for (let t = 1; t < thresholds.length; t++) {
+        let newPopulation = [];
+        while (newPopulation.length < populationSize) {
+            // Draw and mutate a sample
+            let thetaStar = selectRandomSample(acceptedSamples);
+            let thetaPrime = mutateTheta(thetaStar, mutationCovariance);
+
+            // Accept the mutated sample if it meets the current threshold
+            if (distanceFunction(model(thetaPrime), observedData) <= thresholds[t]) {
+                newPopulation.push(thetaPrime);
+            }
+        }
+        acceptedSamples = newPopulation;
+    }
+
+    return acceptedSamples;
+}
+
+// Example of how to use the abcSmc function
+
+// Example prior function
+function prior() {
+    // Generate a random parameter set from the prior distribution
+    return [Math.random(), Math.random()]; // Example for a 2-parameter model
+}
+
+// Example model function
+function model(theta) {
+    // Simulate data from the model using parameters theta
+    // This is a placeholder; replace with your actual model simulation
+    return theta.map(x => x * 2); // Example transformation
+}
+
+// Example distance function
+function distanceFunction(simulatedData, observedData) {
+    // Compute the distance between simulated and observed data
+    // This is a placeholder; replace with your actual distance computation
+    return Math.sqrt(simulatedData.reduce((sum, sim, i) => sum + (sim - observedData[i]) ** 2, 0)); // Euclidean distance
+}
+
+
+/*
+// Custom drawing function to draw the preferred directions.
+function drawCanvas(){
+	
+
+	
+	// Add the canvas if required
+	if( !this.helpClasses["canvas"] ){ this.addCanvas() }
+	
+	// Clear canvas and draw stroma border
+	this.Cim.clear( this.conf["CANVASCOLOR"] )
+	
+	//this.Cim.drawPixelSet(pixelarray: ArrayCoordinate[], col: HexColor | function)
+		
+	// Draw each cellkind appropriately
+	let cellcolor=this.conf["CELLCOLOR"], 
+		nrcells=this.conf["NRCELLS"], cellkind, cellborders = this.conf["SHOWBORDERS"]
+	for( cellkind = 0; cellkind < nrcells.length; cellkind ++ ){
+		
+		// draw the cells of each kind in the right color
+		if( cellcolor[ cellkind ] != -1 ){
+			this.Cim.drawCells( cellkind+1, cellcolor[cellkind] )
+		}
+			
+		// Draw borders if required
+		if(  cellborders[ cellkind  ]  ){
+			this.Cim.drawCellBorders( cellkind+1, "000000" )
+		}
+	}
+		
+
+	let pdc = this.C.getConstraint( "PersistenceConstraint" )
+	let ctx = this.Cim.context(), zoom = this.conf["zoom"]
+	let prefdir = ( pdc.conf["LAMBDA_DIR"][ cellkind+1 ] > 0  ) || false
+	ctx.beginPath()
+	ctx.lineWidth = 2*zoom
+
+	for( let i of this.C.cellIDs() ){
+		
+		// Only draw for cells that have a preferred direction.
+		//if( i == 0 ) continue
+		prefdir = ( pdc.conf["LAMBDA_DIR"][ this.C.cellKind( i ) ] > 0  ) || false
+		if( !prefdir ) continue
+			
+		ctx.moveTo( 
+			pdc.cellcentroidlists[i][0][0]*zoom,
+			pdc.cellcentroidlists[i][0][1]*zoom)
+		ctx.lineTo( (pdc.cellcentroidlists[i][0][0]+.1*pdc.celldirections[i][0])*zoom,
+			(pdc.cellcentroidlists[i][0][1]+.1*pdc.celldirections[i][1])*zoom)
+	}
+	ctx.stroke()		
+}
+
+function printMethods(obj) {
+    let currentObj = obj;
+    while (currentObj) {
+        Object.getOwnPropertyNames(currentObj).forEach(prop => {
+            if (typeof obj[prop] === 'function') {
+             
+            }
+        });
+        currentObj = Object.getPrototypeOf(currentObj);
+    }
+}
+*/
+
+
+/*
+function updateNumber(newNumber) {
+    const rectangle = document.getElementById('temperature');
+    rectangle.textContent = newNumber;
+}
+	
+function drawDot(sim, Canvas, x, y) {
+	// Get the canvas element and its 2D context
+
+	const ctx = Canvas.ctx.getContext('2d');
+
+	// Set the color and style for the dot
+	ctx.fillStyle = 'blue';
+
+	// Draw a circle at (x, y)
+	ctx.beginPath(); // Start a new path
+	ctx.arc(x, y, 5, 0, Math.PI * 2); // Draw a circle: context.arc(x, y, radius, startAngle, endAngle)
+	ctx.fill(); // Fill the circle with the current fill style
+}*/
+
+/*
+function get_all_coords(){
+
+	let coords = [];
+
+	for (let row = 0; row < 9; row++) {
+		for (let col = 0; col < 9; col++) {
+			
+			coords.push(`${row},${col}`);
+		}
+	}
+	return coords
+}
+
+function initializeSudoku() {
+	
+    for (let row = 0; row < 9; row++) {
+        for (let col = 0; col < 9; col++) {
+            const key = `${row},${col}`;
+            const { influences, nonInfluences, square_influences, nonsquare_influences, distanceSorted } = calculateAreas(row, col);
+            myApp.sudokuMap.set(key, { influences: influences, nonInfluences: nonInfluences, square_influences: square_influences, nonsquare_influences: nonsquare_influences,
+				distanceSorted: distanceSorted });
+        }
+    }
+}
+
+function calculateAreas(row, col) {
+    const influences = [];
+	let square_influences = [];
+	let nonsquare_influences = []
+    const nonInfluences = [];
+    const allCoords = [];
+
+    // Calculate influences, non-influences, and prepare distance sorting array
+    for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+            const coord = `${i},${j}`;
+            const distance = Math.sqrt((i - row) ** 2 + (j - col) ** 2);
+            allCoords.push({ coord, distance });
+
+            if (i === row || j === col || (Math.floor(row / 3) === Math.floor(i / 3) && Math.floor(col / 3) === Math.floor(j / 3))) {
+                if (i !== row || j !== col) influences.push(coord);
+            } else {
+                nonInfluences.push(coord);
+            }
+
+			if (Math.floor(row / 3) === Math.floor(i / 3) && Math.floor(col / 3) === Math.floor(j / 3)){
+				square_influences.push(coord)
+			}
+        }
+    }
+
+	nonsquare_influences = influences.filter(element => !square_influences.includes(element))
+    // Sort by distance, add randomization for equal distances
+    allCoords.sort((a, b) => a.distance - b.distance || Math.random() - 0.5);
+
+    const distanceSorted = allCoords.map(item => item.coord);
+
+    return { influences, nonInfluences, square_influences, nonsquare_influences, distanceSorted };
+}
+
+
+function getSquareCenters(width){
+
+	const centers = new Map();
+	row = 0;
+	for( let i = width/(square_num*2) ; i < (width) ; i += (width)/(square_num) ){
+		col = 0
+		for( let j = width/(square_num*2) ; j < (width) ; j += (width)/(square_num) ){
+			
+			const square = `${row},${col}`;
+			centers.set(square, {i,j})
+			
+			col += 1;
+		row +=1
+	
+		}
+	}
+	
+	return centers, width;
+}
+
+
+
+*/
+
+</script>
+</head>
+<body onload="initialize()">
+ 
+ <h1>Sudoku collective intelligence</h1>
+ <p> sudoku solving based on force gradient simulation </p>
+ <div id="rectangle">Temperature: <span id="temperature"></span>°C</div>
+</body>
+</html>

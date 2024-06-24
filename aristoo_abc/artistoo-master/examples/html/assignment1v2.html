@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>SuperCells</title>
+<style type="text/css"> 
+body{
+    font-family: "HelveticaNeue-Light", sans-serif; padding : 15px;
+}
+</style>
+
+<script src="./artistoo.js"></script>
+<script src="./fpsmeter.min.js"></script>
+<script>
+"use strict"
+
+let config = {
+    ndim : 2,
+    field_size : [200,200],
+    conf : {
+		seed : 5,
+        torus : [true,true],    
+        T : 20,                    
+        J: [[0,0, 0], [0,50, 0], [0, 0, 50]],
+        LAMBDA_ACT : [0,0, 500],            
+        MAX_ACT : [0,0, 16],                
+        ACT_MEAN : "geometric",                
+        LAMBDA_V : [0,50, 50],    
+        V : [0,50, 100],        
+        LAMBDA_P : [0,2,2],
+        P : [0,20,140]
+    },
+    simsettings : {
+        NRCELLS : [0,400],        
+        RUNTIME : 500,                
+        CANVASCOLOR : "eaecef",
+        zoom : 3,        
+        ACTCOLOR : [true, true],
+        SHOWBORDERS : [true,true],
+        CELLCOLOR : ["000000","006FFF"],
+        SAVEIMG : true,                        
+        IMGFRAMERATE : 10,                    
+        SAVEPATH : "C:\\Users\\bruno\\OneDrive\\Desktop\\CellStats",
+        EXPNAME : "ManyCellsPrefDir"        
+    }
+}
+
+let sim, meter, time_count = 0
+function initialize(){
+    let custommethods = {
+        initializeGrid : initializeGrid,
+        drawCanvas: drawCanvas
+    }
+    sim = new CPM.Simulation( config, custommethods )
+    let pconstraint = new CPM.PersistenceConstraint( 
+        {
+            LAMBDA_DIR: [0,100,100],                
+            PERSIST: [0,.7,0.2]                    
+        } 
+    )
+    sim.C.add( pconstraint )
+    meter = new FPSMeter({left:"auto", right:"5px"})
+    step()
+}
+
+function step(){
+    sim.step()
+    meter.tick()
+    time_count++
+    document.getElementById("timer").innerText = "Elapsed Time: " + time_count + " steps";
+    requestAnimationFrame( step )
+}
+
+function initializeGrid(){
+    if( !this.helpClasses["gm"] ){ this.addGridManipulator() }
+    for( let i = 1 ; i <  this.C.extents[0] ; i += 10 ){
+        for( let j = 1 ; j <  this.C.extents[1] ; j += 10 ){
+            this.gm.seedCellAt( 1, [i,j] )
+        }
+    }
+    let nrcells = this.conf["NRCELLS"], i
+    for( i = 0; i < nrcells[1]; i++ ){
+        this.gm.seedCell( 2 )
+        for( let b = 0; b < 5; b++ ){
+            this.C.monteCarloStep()
+        }
+    }
+}
+
+function drawCanvas(){
+    if( !this.helpClasses["canvas"] ){ this.addCanvas() }
+    this.Cim.clear( this.conf["CANVASCOLOR"] )
+    let cellcolor=this.conf["CELLCOLOR"], 
+        nrcells=this.conf["NRCELLS"], cellkind, cellborders = this.conf["SHOWBORDERS"]
+    for( cellkind = 0; cellkind < nrcells.length; cellkind ++ ){
+        if( cellcolor[ cellkind ] != -1 ){
+            this.Cim.drawCells( cellkind+1, cellcolor[cellkind] )
+            this.Cim.drawActivityValues(cellkind+1)
+        }
+        if(  cellborders[ cellkind  ]  ){
+            this.Cim.drawCellBorders( cellkind+1, "000000" )
+        }
+    }
+    let pdc = this.C.getConstraint( "PersistenceConstraint" )
+    let ctx = this.Cim.context(), zoom = this.conf["zoom"]
+    let prefdir = false
+    ctx.beginPath()
+    ctx.lineWidth = 1*zoom
+    for( let i of this.C.cellIDs() ){
+        prefdir = ( pdc.conf["LAMBDA_DIR"][ this.C.cellKind( i ) ] > 0  ) || false
+        if( !prefdir ) continue
+            
+        ctx.moveTo( 
+            pdc.cellcentroidlists[i][0][0]*zoom,
+            pdc.cellcentroidlists[i][0][1]*zoom)
+        ctx.lineTo( (pdc.cellcentroidlists[i][0][0]+.1*pdc.celldirections[i][0])*zoom,
+            (pdc.cellcentroidlists[i][0][1]+.1*pdc.celldirections[i][1])*zoom)
+    }
+    ctx.stroke()        
+}
+
+</script>
+</head>
+<body onload="initialize()">
+<h1>Cell-Wall interactions</h1>
+<p>
+400 cells, very close obstacles.
+</p>
+<div id="timer">Elapsed Time: 0 steps</div>
+</body>
+</html>
